@@ -1,15 +1,10 @@
 
 use ndarray::prelude::*;
-use ndarray::array;
+use ndarray::{s,array};
 use std::fmt;
 use std::collections::HashMap;
 use pancurses::{initscr, endwin};
 use rand::prelude::*;
-use std::io::BufReader;
-use std::fs::File;
-use serde::Deserialize;
-use std::path::Path;
-use std::error::Error;
 
 
 #[derive(Debug)]
@@ -17,16 +12,29 @@ struct Map{
     layout: Array2<i32>
 }
 
-pub fn map_from_file<P: AsRef<Path>>(path: P) -> Result<Map, Box<Error>>{
-    // Open the file in read-only mode with buffer.
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
+impl Map {
+    fn map_from_file(x: &[u8]) -> Map {
+        // make a border of 0 cells
+        let mut grid = Array2::from_elem(((50 + 2), (100 + 2)), 0);
+        let a = Array::from_iter(x.iter().filter_map(|&b| match b {
+            b'1' => Some(1),
+            b'0' => Some(0),
+            _ => None,
+        }));
 
-    // Read the JSON contents of the file as an instance of `User`.
-    let u = serde_json::from_reader(reader)?;
+        let a = a.into_shape((50, 100)).unwrap();
+        grid.slice_mut(s![1..-1, 1..-1]).assign(&a);
+        Map {layout: grid}
+    }
 
-    // Return the `User`.
-    Ok(u)
+    fn generate_walls(&mut self, number_of_walls: u8) {
+        for _ in 0..number_of_walls{
+            let rect: Rectangle = Rectangle::make_rand_rect();
+            self.layout.slice_mut(s![rect.top_left_corner.x..rect.width+rect.top_left_corner.x+1,
+                                    rect.top_left_corner.y..rect.length+rect.top_left_corner.y+1]
+                                    ).assign(&rect.fill)
+        }
+    }
 }
 
 
@@ -59,6 +67,31 @@ impl Coordinate {
     }
 }
 
+struct Rectangle {
+    top_left_corner: Coordinate,
+    length: usize,
+    width: usize,
+    fill: Array2<i32>
+}
+
+impl Rectangle {
+    pub fn make_rand_rect() -> Rectangle {
+        let mut rng = rand::thread_rng();
+        let width = rng.gen_range(1,25);
+        let length = rng.gen_range(1,25);
+        let x = rng.gen_range(1,25);
+        let y = rng.gen_range(1,75);
+        let fill = Array2::ones((width+1,length+1));
+
+        Rectangle {
+            top_left_corner: Coordinate{x:x,y:y},
+            length: length,
+            width: width,
+            fill: fill
+        }
+    }
+}
+
 struct Renderer{
     height_inv: Array2<usize>,
     dimensions: Coordinate,
@@ -70,6 +103,7 @@ struct Renderer{
     const_vec: Array2<i32>,
     max_hops: usize
 }
+
 fn make_ascii_map() -> HashMap<i32, char> {
     let mut ascii_map = HashMap::new();
     for (i,thing) in " .,:;<+*LtCa4U80dQM@".chars().enumerate(){
@@ -103,25 +137,18 @@ impl Renderer{
 
 fn main() {
 
-    let grid = map_from_file("map2d.json");
+    let mut room = Map::map_from_file(include_bytes!("room.txt"));
+    room.generate_walls(10);
 
     let window = initscr();
-    let mut rng = rand::thread_rng();
-    // let grid = array![[1,1,1],[1,0,1],[1,1,1]];
-    println!("{:#?}", grid.unwrap());
-    // println!("{},{}",window.get_max_yx());
-//     // let mut map: Map = Map {layout: grid };
-//     let renderer = Renderer::new(window.get_max_yx());
 
-//     for _ in 0..100 {
-//         window.erase();
-//         map.layout[[1,1]] = rng.gen_range(0,10);
-//         // map.layout[[1,1]] = ' '.bytes();
-//         let map_string = map.to_string();
-//         window.printw(map_string);
-//         window.getch();
-//         window.refresh();
+    for _ in 0..10 {
+        window.erase();
+        let map_string = room.to_string();
+        window.printw(map_string);
+        window.getch();
+        window.refresh();
 
-//     }
-//     endwin();
+    }
+    endwin();
 }
